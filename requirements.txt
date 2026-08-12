@@ -1,0 +1,8 @@
+fastapi
+uvicorn
+sentence-transformers
+pandas
+numpy
+pydantic
+python-multipart
+requests
