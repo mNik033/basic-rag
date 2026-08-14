@@ -1,8 +1,12 @@
 fastapi
 uvicorn
-sentence-transformers
-pandas
-numpy
 pydantic
+pydantic-settings
 python-multipart
-requests
+chromadb
+sentence-transformers
+blake3
+pypdf
+python-docx
+httpx
+pytest
