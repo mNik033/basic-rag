@@ -1,0 +1,39 @@
+from functools import lru_cache
+from typing import Literal
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+class Settings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
+
+    # Application Settings
+    app_name: str = "Production RAG Service"
+    environment: Literal["development", "staging", "production"] = "development"
+    debug: bool = True
+    api_v1_str: str = "/api/v1"
+
+    # ChromaDB Settings
+    chroma_persist_dir: str = "data/chromadb"
+    chroma_collection_name: str = "rag_knowledge_base"
+
+    # Embedding Settings
+    embedding_model_name: str = "sentence-transformers/all-MiniLM-L6-v2"
+    embedding_dim: int = 384
+
+    # Chunking Defaults
+    chunk_size: int = 300
+    chunk_overlap: int = 50
+
+    # LLM Provider (Ollama)
+    ollama_base_url: str = "http://localhost:11434"
+    ollama_model: str = "gemma4:e2b"
+    ollama_timeout_seconds: float = 300.0
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    return Settings()
