@@ -24,3 +24,17 @@ class DocumentChunk(BaseModel):
     content: str
     chunk_index: int
     metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class RetrievedChunk(BaseModel):
+    chunk_id: str
+    content: str
+    metadata: dict[str, Any]
+    similarity_score: Optional[float] = None
+
+
+class RAGQueryResult(BaseModel):
+    query: str
+    answer: str
+    sources: list[RetrievedChunk]
+    model: str
