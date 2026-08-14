@@ -38,3 +38,20 @@ class RAGQueryResult(BaseModel):
     answer: str
     sources: list[RetrievedChunk]
     model: str
+
+
+class QueryRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="The question or prompt to ask.")
+    n_results: int = Field(default=3, ge=1, le=10, description="Number of context chunks to retrieve.")
+    system_prompt: Optional[str] = Field(default=None, description="Optional custom system prompt override.")
+
+
+class SearchRequest(BaseModel):
+    query: str = Field(..., min_length=1, description="Search term or phrase.")
+    n_results: int = Field(default=3, ge=1, le=20, description="Maximum number of chunks to return.")
+
+
+class SearchResponse(BaseModel):
+    query: str
+    total_results: int
+    results: list[RetrievedChunk]
