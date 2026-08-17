@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     ollama_num_predict: int = 512
     ollama_num_ctx: int = 2048
     ollama_temperature: float = 0.2
+    ollama_think: bool = False
 
 
 @lru_cache()

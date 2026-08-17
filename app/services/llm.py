@@ -17,6 +17,7 @@ class OllamaLLMService:
         num_predict: Optional[int] = None,
         num_ctx: Optional[int] = None,
         temperature: Optional[float] = None,
+        think: Optional[bool] = None,
     ) -> None:
         settings = get_settings()
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
@@ -26,6 +27,7 @@ class OllamaLLMService:
         self.num_predict = num_predict if num_predict is not None else settings.ollama_num_predict
         self.num_ctx = num_ctx if num_ctx is not None else settings.ollama_num_ctx
         self.temperature = temperature if temperature is not None else settings.ollama_temperature
+        self.think = think if think is not None else settings.ollama_think
 
     def _build_options(self) -> dict:
         """Construct generation options dictionary for Ollama runtime."""
@@ -44,6 +46,7 @@ class OllamaLLMService:
             "stream": False,
             "keep_alive": self.keep_alive,
             "options": self._build_options(),
+            "think": self.think,
         }
         if system_prompt:
             payload["system"] = system_prompt
@@ -84,6 +87,7 @@ class OllamaLLMService:
             "stream": True,
             "keep_alive": self.keep_alive,
             "options": self._build_options(),
+            "think": self.think,
         }
         if system_prompt:
             payload["system"] = system_prompt
