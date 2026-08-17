@@ -10,3 +10,4 @@ pypdf
 python-docx
 httpx
 pytest
+pytest-asyncio
