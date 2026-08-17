@@ -18,6 +18,7 @@ class OllamaLLMService:
         num_ctx: Optional[int] = None,
         temperature: Optional[float] = None,
         think: Optional[bool] = None,
+        num_thread: Optional[int] = None,
     ) -> None:
         settings = get_settings()
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
@@ -28,14 +29,18 @@ class OllamaLLMService:
         self.num_ctx = num_ctx if num_ctx is not None else settings.ollama_num_ctx
         self.temperature = temperature if temperature is not None else settings.ollama_temperature
         self.think = think if think is not None else settings.ollama_think
+        self.num_thread = num_thread if num_thread is not None else settings.ollama_num_thread
 
     def _build_options(self) -> dict:
         """Construct generation options dictionary for Ollama runtime."""
-        return {
+        opts = {
             "num_predict": self.num_predict,
             "num_ctx": self.num_ctx,
             "temperature": self.temperature,
         }
+        if self.num_thread is not None:
+            opts["num_thread"] = self.num_thread
+        return opts
 
     async def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Send a prompt to Ollama's /api/generate endpoint and return the completed response."""

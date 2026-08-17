@@ -1,5 +1,5 @@
 from functools import lru_cache
-from typing import Literal
+from typing import Literal, Optional
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -45,6 +45,7 @@ class Settings(BaseSettings):
     ollama_num_ctx: int = 2048
     ollama_temperature: float = 0.2
     ollama_think: bool = False
+    ollama_num_thread: Optional[int] = None
 
 
 @lru_cache()
