@@ -28,6 +28,7 @@ async def query_rag(
         n_results=request.n_results,
         system_prompt=request.system_prompt,
         use_cache=request.use_cache,
+        similarity_threshold=request.similarity_threshold,
     )
 
 

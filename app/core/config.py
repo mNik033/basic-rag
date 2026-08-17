@@ -33,6 +33,9 @@ class Settings(BaseSettings):
     cache_collection_name: str = "rag_query_cache"
     cache_similarity_threshold: float = 0.93
 
+    # Context Pruning Settings
+    similarity_threshold: float = 0.35
+
     # LLM Provider (Ollama)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma4:e2b"

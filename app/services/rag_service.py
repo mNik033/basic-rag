@@ -1,4 +1,5 @@
 from typing import Optional
+from app.core.config import get_settings
 from app.core.exceptions import DuplicateDocumentError, EmptyDocumentError
 from app.domain.schemas import ParsedDocument, RAGQueryResult, RetrievedChunk
 from app.services.chunking import RecursiveCharacterTextSplitter
@@ -12,6 +13,8 @@ Answer the question strictly based on the provided context passages.
 If the context does not contain enough information to answer the question, clearly state: "I don't have enough information in the provided documents to answer that question."
 Always cite or refer to the relevant source documents when possible.
 """
+
+NO_INFO_FALLBACK = "I don't have enough information in the provided documents to answer that question."
 
 
 class RAGService:
@@ -59,9 +62,10 @@ class RAGService:
         n_results: int = 3,
         system_prompt: Optional[str] = None,
         use_cache: bool = True,
+        similarity_threshold: Optional[float] = None,
     ) -> RAGQueryResult:
-        """Perform semantic search, build augmented context prompt, and generate LLM answer.
-        Checks and updates semantic query cache when enabled."""
+        """Perform semantic search, filter/prune low similarity context chunks,
+        and generate LLM answer. Checks and updates semantic query cache when enabled."""
         query_embedding = self.embedding_service.embed_text(query)
 
         # Check semantic cache first
@@ -108,8 +112,29 @@ class RAGService:
                 )
             )
 
+        # Context pruning: filter out chunks below similarity threshold
+        effective_threshold = (
+            similarity_threshold
+            if similarity_threshold is not None
+            else get_settings().similarity_threshold
+        )
+        relevant_chunks = [
+            chunk for chunk in retrieved_chunks
+            if chunk.similarity_score is not None and chunk.similarity_score >= effective_threshold
+        ]
+
+        # Early exit if no relevant chunks found in knowledge base
+        if not relevant_chunks:
+            return RAGQueryResult(
+                query=query,
+                answer=NO_INFO_FALLBACK,
+                sources=[],
+                model="fast-path-early-exit",
+                cached=False,
+            )
+
         context_blocks = []
-        for i, chunk in enumerate(retrieved_chunks, start=1):
+        for i, chunk in enumerate(relevant_chunks, start=1):
             source = chunk.metadata.get("filename", "unknown")
             context_blocks.append(f"[Source {i}: {source}]\n{chunk.content}")
 
@@ -137,7 +162,7 @@ class RAGService:
                     "metadata": chunk.metadata,
                     "similarity_score": chunk.similarity_score,
                 }
-                for chunk in retrieved_chunks
+                for chunk in relevant_chunks
             ]
             self.vector_store.store_query_cache(
                 query=query,
@@ -150,7 +175,7 @@ class RAGService:
         return RAGQueryResult(
             query=query,
             answer=answer,
-            sources=retrieved_chunks,
+            sources=relevant_chunks,
             model=self.llm_service.model,
             cached=False,
         )

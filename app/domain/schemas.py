@@ -46,6 +46,12 @@ class QueryRequest(BaseModel):
     n_results: int = Field(default=3, ge=1, le=10, description="Number of context chunks to retrieve.")
     system_prompt: Optional[str] = Field(default=None, description="Optional custom system prompt override.")
     use_cache: bool = Field(default=True, description="Whether to check and populate the semantic query cache.")
+    similarity_threshold: Optional[float] = Field(
+        default=None,
+        ge=0.0,
+        le=1.0,
+        description="Minimum cosine similarity score (0.0 - 1.0) required to include a context chunk.",
+    )
 
 
 class SearchRequest(BaseModel):
