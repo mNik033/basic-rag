@@ -1,3 +1,4 @@
+import asyncio
 import json
 from typing import AsyncGenerator, Optional
 from app.core.config import get_settings
@@ -35,25 +36,25 @@ class RAGService:
         self.vector_store = vector_store or get_vector_store()
         self.llm_service = llm_service or get_llm_service()
 
-    def ingest_document(self, filename: str, content_bytes: bytes) -> ParsedDocument:
-        """Parse raw file bytes, split into chunks, embed, and store in vector database."""
+    async def ingest_document(self, filename: str, content_bytes: bytes) -> ParsedDocument:
+        """Parse raw file bytes, split into chunks, embed, and store in vector database non-blockingly."""
         content_hash = self.parser.compute_hash(content_bytes)
-        existing = self.vector_store.get_by_content_hash(content_hash)
+        existing = await asyncio.to_thread(self.vector_store.get_by_content_hash, content_hash)
         if existing:
             raise DuplicateDocumentError(
                 content_hash=content_hash,
                 filename=existing.get("filename", filename),
             )
 
-        parsed_doc = self.parser.parse(filename, content_bytes)
+        parsed_doc = await asyncio.to_thread(self.parser.parse, filename, content_bytes)
         chunks = self.splitter.split_document(parsed_doc)
 
         if not chunks:
             raise EmptyDocumentError(filename=filename)
 
         texts = [chunk.content for chunk in chunks]
-        embeddings = self.embedding_service.embed_documents(texts)
-        self.vector_store.upsert_chunks(chunks=chunks, embeddings=embeddings)
+        embeddings = await asyncio.to_thread(self.embedding_service.embed_documents, texts)
+        await asyncio.to_thread(self.vector_store.upsert_chunks, chunks=chunks, embeddings=embeddings)
 
         return parsed_doc
 
@@ -67,11 +68,15 @@ class RAGService:
     ) -> RAGQueryResult:
         """Perform semantic search, filter/prune low similarity context chunks,
         and generate LLM answer. Checks and updates semantic query cache when enabled."""
-        query_embedding = self.embedding_service.embed_text(query)
+        # Non-blocking CPU embedding
+        query_embedding = await asyncio.to_thread(self.embedding_service.embed_text, query)
 
-        # Check semantic cache first
+        # Check semantic cache first (non-blocking IO)
         if use_cache:
-            cached_entry = self.vector_store.query_cache(query_embedding=query_embedding)
+            cached_entry = await asyncio.to_thread(
+                self.vector_store.query_cache,
+                query_embedding=query_embedding,
+            )
             if cached_entry:
                 cached_sources = [
                     RetrievedChunk(
@@ -90,7 +95,11 @@ class RAGService:
                     cached=True,
                 )
 
-        search_results = self.vector_store.query(query_embedding, n_results=n_results)
+        search_results = await asyncio.to_thread(
+            self.vector_store.query,
+            query_embedding,
+            n_results=n_results,
+        )
 
         retrieved_chunks: list[RetrievedChunk] = []
         documents = search_results.get("documents", [[]])[0]
@@ -165,7 +174,8 @@ class RAGService:
                 }
                 for chunk in relevant_chunks
             ]
-            self.vector_store.store_query_cache(
+            await asyncio.to_thread(
+                self.vector_store.store_query_cache,
                 query=query,
                 query_embedding=query_embedding,
                 answer=answer,
@@ -190,11 +200,15 @@ class RAGService:
         similarity_threshold: Optional[float] = None,
     ) -> AsyncGenerator[str, None]:
         """Stream RAG response tokens via SSE events. Checks and updates semantic cache."""
-        query_embedding = self.embedding_service.embed_text(query)
+        # Non-blocking CPU embedding
+        query_embedding = await asyncio.to_thread(self.embedding_service.embed_text, query)
 
         # Check semantic cache
         if use_cache:
-            cached_entry = self.vector_store.query_cache(query_embedding=query_embedding)
+            cached_entry = await asyncio.to_thread(
+                self.vector_store.query_cache,
+                query_embedding=query_embedding,
+            )
             if cached_entry:
                 cached_sources = cached_entry.get("sources", [])
                 yield f"data: {json.dumps({'event': 'start', 'cached': True, 'sources': cached_sources, 'model': cached_entry.get('model', 'cached')})}\n\n"
@@ -202,7 +216,11 @@ class RAGService:
                 yield f"data: {json.dumps({'event': 'end', 'cached': True, 'model': cached_entry.get('model', 'cached')})}\n\n"
                 return
 
-        search_results = self.vector_store.query(query_embedding, n_results=n_results)
+        search_results = await asyncio.to_thread(
+            self.vector_store.query,
+            query_embedding,
+            n_results=n_results,
+        )
 
         retrieved_chunks: list[RetrievedChunk] = []
         documents = search_results.get("documents", [[]])[0]
@@ -279,9 +297,10 @@ class RAGService:
 
         full_answer = "".join(accumulated_answer).strip()
 
-        # Cache completed answer
+        # Cache completed answer non-blockingly
         if use_cache and full_answer:
-            self.vector_store.store_query_cache(
+            await asyncio.to_thread(
+                self.vector_store.store_query_cache,
                 query=query,
                 query_embedding=query_embedding,
                 answer=full_answer,

@@ -13,11 +13,27 @@ class OllamaLLMService:
         base_url: Optional[str] = None,
         model: Optional[str] = None,
         timeout_seconds: Optional[float] = None,
+        keep_alive: Optional[str] = None,
+        num_predict: Optional[int] = None,
+        num_ctx: Optional[int] = None,
+        temperature: Optional[float] = None,
     ) -> None:
         settings = get_settings()
         self.base_url = (base_url or settings.ollama_base_url).rstrip("/")
         self.model = model or settings.ollama_model
         self.timeout = timeout_seconds or settings.ollama_timeout_seconds
+        self.keep_alive = keep_alive or settings.ollama_keep_alive
+        self.num_predict = num_predict if num_predict is not None else settings.ollama_num_predict
+        self.num_ctx = num_ctx if num_ctx is not None else settings.ollama_num_ctx
+        self.temperature = temperature if temperature is not None else settings.ollama_temperature
+
+    def _build_options(self) -> dict:
+        """Construct generation options dictionary for Ollama runtime."""
+        return {
+            "num_predict": self.num_predict,
+            "num_ctx": self.num_ctx,
+            "temperature": self.temperature,
+        }
 
     async def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """Send a prompt to Ollama's /api/generate endpoint and return the completed response."""
@@ -26,6 +42,8 @@ class OllamaLLMService:
             "model": self.model,
             "prompt": prompt,
             "stream": False,
+            "keep_alive": self.keep_alive,
+            "options": self._build_options(),
         }
         if system_prompt:
             payload["system"] = system_prompt
@@ -64,6 +82,8 @@ class OllamaLLMService:
             "model": self.model,
             "prompt": prompt,
             "stream": True,
+            "keep_alive": self.keep_alive,
+            "options": self._build_options(),
         }
         if system_prompt:
             payload["system"] = system_prompt

@@ -40,6 +40,10 @@ class Settings(BaseSettings):
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma4:e2b"
     ollama_timeout_seconds: float = 300.0
+    ollama_keep_alive: str = "15m"
+    ollama_num_predict: int = 512
+    ollama_num_ctx: int = 2048
+    ollama_temperature: float = 0.2
 
 
 @lru_cache()

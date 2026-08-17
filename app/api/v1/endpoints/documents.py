@@ -23,7 +23,7 @@ async def upload_document(
     rag_service: RAGService = Depends(get_rag_service_dep),
 ) -> DocumentUploadResponse:
     content_bytes = await file.read()
-    parsed_doc = rag_service.ingest_document(
+    parsed_doc = await rag_service.ingest_document(
         filename=file.filename or "unknown",
         content_bytes=content_bytes,
     )
