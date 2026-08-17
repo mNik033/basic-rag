@@ -1,4 +1,6 @@
+import os
 import threading
+from pathlib import Path
 from typing import Optional
 from sentence_transformers import SentenceTransformer
 from app.core.config import get_settings
@@ -28,11 +30,13 @@ class EmbeddingService:
         self.model_name = settings.embedding_model_name
         self.dimension = settings.embedding_dim
 
+        model_path = str(Path(self.model_name).expanduser())
+
         try:
-            self._model = SentenceTransformer(self.model_name)
+            self._model = SentenceTransformer(model_path)
             self._initialized = True
         except Exception as e:
-            raise EmbeddingModelError(f"Failed to load embedding model '{self.model_name}': {str(e)}") from e
+            raise EmbeddingModelError(f"Failed to load embedding model '{model_path}': {str(e)}") from e
 
     def embed_text(self, text: str) -> list[float]:
         """Generate vector embedding for a single text query or string."""
