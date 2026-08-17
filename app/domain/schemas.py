@@ -38,12 +38,14 @@ class RAGQueryResult(BaseModel):
     answer: str
     sources: list[RetrievedChunk]
     model: str
+    cached: bool = False
 
 
 class QueryRequest(BaseModel):
     query: str = Field(..., min_length=1, description="The question or prompt to ask.")
     n_results: int = Field(default=3, ge=1, le=10, description="Number of context chunks to retrieve.")
     system_prompt: Optional[str] = Field(default=None, description="Optional custom system prompt override.")
+    use_cache: bool = Field(default=True, description="Whether to check and populate the semantic query cache.")
 
 
 class SearchRequest(BaseModel):

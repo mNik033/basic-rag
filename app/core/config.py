@@ -28,6 +28,11 @@ class Settings(BaseSettings):
     chunk_size: int = 300
     chunk_overlap: int = 50
 
+    # Semantic Cache Settings
+    cache_enabled: bool = True
+    cache_collection_name: str = "rag_query_cache"
+    cache_similarity_threshold: float = 0.93
+
     # LLM Provider (Ollama)
     ollama_base_url: str = "http://localhost:11434"
     ollama_model: str = "gemma4:e2b"

@@ -58,9 +58,33 @@ class RAGService:
         query: str,
         n_results: int = 3,
         system_prompt: Optional[str] = None,
+        use_cache: bool = True,
     ) -> RAGQueryResult:
-        """Perform semantic search, build augmented context prompt, and generate LLM answer."""
+        """Perform semantic search, build augmented context prompt, and generate LLM answer.
+        Checks and updates semantic query cache when enabled."""
         query_embedding = self.embedding_service.embed_text(query)
+
+        # Check semantic cache first
+        if use_cache:
+            cached_entry = self.vector_store.query_cache(query_embedding=query_embedding)
+            if cached_entry:
+                cached_sources = [
+                    RetrievedChunk(
+                        chunk_id=s.get("chunk_id", f"cached_{idx}"),
+                        content=s.get("content", ""),
+                        metadata=s.get("metadata", {}),
+                        similarity_score=s.get("similarity_score"),
+                    )
+                    for idx, s in enumerate(cached_entry.get("sources", []))
+                ]
+                return RAGQueryResult(
+                    query=query,
+                    answer=cached_entry["answer"],
+                    sources=cached_sources,
+                    model=f"{cached_entry.get('model', 'cached')} (cache-hit)",
+                    cached=True,
+                )
+
         search_results = self.vector_store.query(query_embedding, n_results=n_results)
 
         retrieved_chunks: list[RetrievedChunk] = []
@@ -104,11 +128,31 @@ class RAGService:
             system_prompt=system_prompt or SYSTEM_PROMPT,
         )
 
+        # Store in semantic cache for future similar queries
+        if use_cache and answer:
+            sources_dicts = [
+                {
+                    "chunk_id": chunk.chunk_id,
+                    "content": chunk.content,
+                    "metadata": chunk.metadata,
+                    "similarity_score": chunk.similarity_score,
+                }
+                for chunk in retrieved_chunks
+            ]
+            self.vector_store.store_query_cache(
+                query=query,
+                query_embedding=query_embedding,
+                answer=answer,
+                sources=sources_dicts,
+                model=self.llm_service.model,
+            )
+
         return RAGQueryResult(
             query=query,
             answer=answer,
             sources=retrieved_chunks,
             model=self.llm_service.model,
+            cached=False,
         )
 
 
