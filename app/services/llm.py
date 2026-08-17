@@ -1,4 +1,5 @@
-from typing import Optional
+import json
+from typing import AsyncGenerator, Optional
 import httpx
 from app.core.config import get_settings
 from app.core.exceptions import LLMConnectionError, LLMResponseError
@@ -51,6 +52,54 @@ class OllamaLLMService:
 
             data = response.json()
             return data.get("response", "").strip()
+
+    async def stream_response(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream generated response tokens asynchronously from Ollama's /api/generate endpoint."""
+        url = f"{self.base_url}/api/generate"
+        payload = {
+            "model": self.model,
+            "prompt": prompt,
+            "stream": True,
+        }
+        if system_prompt:
+            payload["system"] = system_prompt
+
+        async with httpx.AsyncClient(timeout=self.timeout) as client:
+            try:
+                async with client.stream("POST", url, json=payload) as response:
+                    if response.status_code != 200:
+                        body = await response.aread()
+                        raise LLMResponseError(
+                            status_code=response.status_code,
+                            message=f"Ollama streaming returned HTTP error {response.status_code}: {body.decode(errors='replace')}",
+                        )
+
+                    async for line in response.aiter_lines():
+                        if not line or not line.strip():
+                            continue
+                        try:
+                            data = json.loads(line)
+                            token = data.get("response", "")
+                            if token:
+                                yield token
+                            if data.get("done", False):
+                                break
+                        except json.JSONDecodeError:
+                            continue
+            except (httpx.ConnectError, httpx.TimeoutException) as exc:
+                raise LLMConnectionError(
+                    base_url=self.base_url,
+                    error=f"Streaming connection to Ollama failed: {str(exc)}",
+                ) from exc
+            except httpx.RequestError as exc:
+                raise LLMConnectionError(
+                    base_url=self.base_url,
+                    error=f"Streaming request to Ollama failed: {str(exc)}",
+                ) from exc
 
     async def is_healthy(self) -> bool:
         """Check if Ollama server is reachable and active."""

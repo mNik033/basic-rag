@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends
+from fastapi.responses import StreamingResponse
 from app.api.dependencies import get_rag_service_dep
 from app.domain.schemas import (
     QueryRequest,
@@ -29,6 +30,32 @@ async def query_rag(
         system_prompt=request.system_prompt,
         use_cache=request.use_cache,
         similarity_threshold=request.similarity_threshold,
+    )
+
+
+@router.post(
+    "/stream",
+    summary="Ask a question using RAG with real-time SSE token streaming",
+)
+async def stream_rag(
+    request: QueryRequest,
+    rag_service: RAGService = Depends(get_rag_service_dep),
+) -> StreamingResponse:
+    """Streams server-sent events with tokens, metadata, and citation sources in real time."""
+    return StreamingResponse(
+        rag_service.stream_query(
+            query=request.query,
+            n_results=request.n_results,
+            system_prompt=request.system_prompt,
+            use_cache=request.use_cache,
+            similarity_threshold=request.similarity_threshold,
+        ),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

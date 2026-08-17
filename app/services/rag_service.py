@@ -1,4 +1,5 @@
-from typing import Optional
+import json
+from typing import AsyncGenerator, Optional
 from app.core.config import get_settings
 from app.core.exceptions import DuplicateDocumentError, EmptyDocumentError
 from app.domain.schemas import ParsedDocument, RAGQueryResult, RetrievedChunk
@@ -179,6 +180,116 @@ class RAGService:
             model=self.llm_service.model,
             cached=False,
         )
+
+    async def stream_query(
+        self,
+        query: str,
+        n_results: int = 3,
+        system_prompt: Optional[str] = None,
+        use_cache: bool = True,
+        similarity_threshold: Optional[float] = None,
+    ) -> AsyncGenerator[str, None]:
+        """Stream RAG response tokens via SSE events. Checks and updates semantic cache."""
+        query_embedding = self.embedding_service.embed_text(query)
+
+        # Check semantic cache
+        if use_cache:
+            cached_entry = self.vector_store.query_cache(query_embedding=query_embedding)
+            if cached_entry:
+                cached_sources = cached_entry.get("sources", [])
+                yield f"data: {json.dumps({'event': 'start', 'cached': True, 'sources': cached_sources, 'model': cached_entry.get('model', 'cached')})}\n\n"
+                yield f"data: {json.dumps({'event': 'token', 'content': cached_entry['answer']})}\n\n"
+                yield f"data: {json.dumps({'event': 'end', 'cached': True, 'model': cached_entry.get('model', 'cached')})}\n\n"
+                return
+
+        search_results = self.vector_store.query(query_embedding, n_results=n_results)
+
+        retrieved_chunks: list[RetrievedChunk] = []
+        documents = search_results.get("documents", [[]])[0]
+        metadatas = search_results.get("metadatas", [[]])[0]
+        ids = search_results.get("ids", [[]])[0]
+        distances = search_results.get("distances", [[]])[0]
+
+        for i, doc_text in enumerate(documents):
+            chunk_id = ids[i] if i < len(ids) else f"chunk_{i}"
+            meta = metadatas[i] if i < len(metadatas) else {}
+            dist = distances[i] if i < len(distances) else None
+            sim_score = (1.0 - dist) if dist is not None else None
+
+            retrieved_chunks.append(
+                RetrievedChunk(
+                    chunk_id=chunk_id,
+                    content=doc_text,
+                    metadata=meta,
+                    similarity_score=sim_score,
+                )
+            )
+
+        effective_threshold = (
+            similarity_threshold
+            if similarity_threshold is not None
+            else get_settings().similarity_threshold
+        )
+        relevant_chunks = [
+            chunk for chunk in retrieved_chunks
+            if chunk.similarity_score is not None and chunk.similarity_score >= effective_threshold
+        ]
+
+        # Early exit if no relevant context
+        if not relevant_chunks:
+            yield f"data: {json.dumps({'event': 'start', 'cached': False, 'sources': [], 'model': 'fast-path-early-exit'})}\n\n"
+            yield f"data: {json.dumps({'event': 'token', 'content': NO_INFO_FALLBACK})}\n\n"
+            yield f"data: {json.dumps({'event': 'end', 'cached': False, 'model': 'fast-path-early-exit'})}\n\n"
+            return
+
+        sources_dicts = [
+            {
+                "chunk_id": chunk.chunk_id,
+                "content": chunk.content,
+                "metadata": chunk.metadata,
+                "similarity_score": chunk.similarity_score,
+            }
+            for chunk in relevant_chunks
+        ]
+
+        yield f"data: {json.dumps({'event': 'start', 'cached': False, 'sources': sources_dicts, 'model': self.llm_service.model})}\n\n"
+
+        context_blocks = []
+        for i, chunk in enumerate(relevant_chunks, start=1):
+            source = chunk.metadata.get("filename", "unknown")
+            context_blocks.append(f"[Source {i}: {source}]\n{chunk.content}")
+
+        formatted_context = "\n\n".join(context_blocks)
+        prompt = (
+            f"Context Information:\n"
+            f"---------------------\n"
+            f"{formatted_context}\n"
+            f"---------------------\n\n"
+            f"Question: {query}\n"
+            f"Answer:"
+        )
+
+        accumulated_answer: list[str] = []
+        async for token in self.llm_service.stream_response(
+            prompt=prompt,
+            system_prompt=system_prompt or SYSTEM_PROMPT,
+        ):
+            accumulated_answer.append(token)
+            yield f"data: {json.dumps({'event': 'token', 'content': token})}\n\n"
+
+        full_answer = "".join(accumulated_answer).strip()
+
+        # Cache completed answer
+        if use_cache and full_answer:
+            self.vector_store.store_query_cache(
+                query=query,
+                query_embedding=query_embedding,
+                answer=full_answer,
+                sources=sources_dicts,
+                model=self.llm_service.model,
+            )
+
+        yield f"data: {json.dumps({'event': 'end', 'cached': False, 'model': self.llm_service.model})}\n\n"
 
 
 def get_rag_service() -> RAGService:
