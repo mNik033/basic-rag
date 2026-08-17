@@ -63,3 +63,24 @@ class SearchResponse(BaseModel):
     query: str
     total_results: int
     results: list[RetrievedChunk]
+
+
+class DocumentUploadResponse(BaseModel):
+    message: str
+    doc_id: str
+    filename: str
+    chunks_created: int
+
+
+class DocumentResponse(BaseModel):
+    doc_id: str
+    filename: str
+    content_hash: str
+    file_type: str
+    file_size: int
+    created_at: str
+
+
+class DocumentDeleteResponse(BaseModel):
+    message: str
+    doc_id: str
