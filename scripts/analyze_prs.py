@@ -51,8 +51,17 @@ async def main() -> None:
         action="store_true",
         help="Force re-analyzing PRs that were already summarized",
     )
+    parser.add_argument(
+        "--debug",
+        action="store_true",
+        help="Enable debug logging to print prompts and raw LLM responses",
+    )
 
     args = parser.parse_args()
+
+    if args.debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger("app.services.github.understanding_service").setLevel(logging.DEBUG)
 
     await init_db()
 

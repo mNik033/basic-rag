@@ -82,7 +82,7 @@ class PRUnderstandingService:
         max_diff_chars: int = 8000,
     ) -> None:
         self.session = session
-        self.llm_service = llm_service or get_llm_service()
+        self.llm_service = llm_service or OllamaLLMService(num_predict=1536, num_ctx=4096)
         self.max_diff_chars = max_diff_chars
 
     def build_pr_context_prompt(self, pr: PullRequest) -> str:
@@ -144,11 +144,14 @@ class PRUnderstandingService:
     async def analyze_pull_request(self, pr: PullRequest) -> PRUnderstandingResult:
         """Call LLM with PR context and parse into validated PRUnderstandingResult."""
         prompt = self.build_pr_context_prompt(pr)
+        logger.debug("Prompt sent to LLM for PR #%s:\n%s", pr.number, prompt)
+
         raw_response = await self.llm_service.generate_response(
             prompt=prompt,
             system_prompt=PR_UNDERSTANDING_SYSTEM_PROMPT,
             format_json=True,
         )
+        logger.debug("Raw LLM output for PR #%s:\n%s", pr.number, raw_response)
 
         cleaned = clean_json_response(raw_response)
 
@@ -158,7 +161,13 @@ class PRUnderstandingService:
             result.raw_response = parsed_dict
             return result
         except (json.JSONDecodeError, Exception) as exc:
-            logger.warning("Failed strict validation on LLM output for PR #%s: %s. Attempting fallback.", pr.number, exc)
+            logger.warning(
+                "Failed strict validation on LLM output for PR #%s: %s.\n"
+                "=== RAW LLM RESPONSE ===\n%s\n========================",
+                pr.number,
+                exc,
+                raw_response,
+            )
             # Fallback healing
             return PRUnderstandingResult(
                 summary=f"PR #{pr.number}: {pr.title}",
@@ -253,12 +262,23 @@ class PRUnderstandingService:
             query = query.where(PullRequest.number == request.pr_number)
 
         if not request.force_reprocess:
-            query = query.where(PullRequest.understanding == None)  # noqa: E711
+            query = query.outerjoin(
+                PRUnderstanding, PullRequest.id == PRUnderstanding.pull_request_id
+            ).where(PRUnderstanding.id.is_(None))
 
         if request.limit:
             query = query.limit(request.limit)
 
         prs = (await self.session.execute(query)).scalars().all()
+        status_label = "all" if request.force_reprocess else "unanalyzed"
+        logger.info(
+            "Found %d %s PRs to analyze for %s/%s (force=%s).",
+            len(prs),
+            status_label,
+            repo.owner,
+            repo.name,
+            request.force_reprocess,
+        )
 
         processed_count = 0
         failed_count = 0

@@ -41,8 +41,8 @@ class Settings(BaseSettings):
     ollama_model: str = "gemma4:e2b"
     ollama_timeout_seconds: float = 300.0
     ollama_keep_alive: str = "15m"
-    ollama_num_predict: int = 512
-    ollama_num_ctx: int = 2048
+    ollama_num_predict: int = 1536
+    ollama_num_ctx: int = 4096
     ollama_temperature: float = 0.2
     ollama_think: bool = False
     ollama_num_thread: Optional[int] = None

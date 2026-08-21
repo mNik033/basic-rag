@@ -166,7 +166,6 @@ class GitHubApiClient:
         state: str = "closed",
         sort: str = "created",
         direction: str = "desc",
-        limit: Optional[int] = None,
     ) -> AsyncGenerator[Dict[str, Any], None]:
         """Fetch pull requests matching state and ordering."""
         params = {
@@ -174,7 +173,7 @@ class GitHubApiClient:
             "sort": sort,
             "direction": direction,
         }
-        async for pr in self.paginate(f"/repos/{owner}/{repo}/pulls", params=params, max_items=limit):
+        async for pr in self.paginate(f"/repos/{owner}/{repo}/pulls", params=params):
             yield pr
 
     async def fetch_pr_commits(self, owner: str, repo: str, pr_number: int) -> List[RawCommit]:
