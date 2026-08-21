@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 
 from app.api.v1.router import api_router
 from app.core.config import get_settings
+from app.core.database import init_db
 from app.core.exceptions import RAGException
 from app.services.embedding import get_embedding_service
 from app.services.llm import get_llm_service
@@ -40,6 +41,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         logger.info("ChromaDB vector store initialized successfully.")
     except Exception as e:
         logger.error(f"Failed to initialize ChromaDB on startup: {e}")
+
+    # Initialize Relational Database Schema
+    try:
+        logger.info("Initializing relational database schema...")
+        await init_db()
+        logger.info("Relational database schema initialized successfully.")
+    except Exception as e:
+        logger.error(f"Failed to initialize relational database schema on startup: {e}")
 
     # Check Ollama connectivity
     llm_service = get_llm_service()
