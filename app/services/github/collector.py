@@ -83,7 +83,7 @@ class GitHubCollectorService:
         existing_pr = res.scalar_one_or_none()
 
         if existing_pr and not force_resync:
-            logger.debug("PR #%s already synced for repo_id %s; skipping.", raw_pr.number, repository_id)
+            logger.info("PR #%s is already stored in the database.", raw_pr.number)
             return False
 
         if existing_pr:
@@ -210,7 +210,6 @@ class GitHubCollectorService:
                     owner=request.owner,
                     repo=request.repo,
                     state="closed",
-                    limit=request.limit,
                 ):
                     # Only process merged PRs (merged_at is not null)
                     if not pr_summary.get("merged_at"):
@@ -230,7 +229,7 @@ class GitHubCollectorService:
                         break
 
                     pr_num = pr_summary["number"]
-                    logger.info("Ingesting PR #%s (%s)", pr_num, pr_summary.get("title"))
+                    logger.info("Ingesting merged PR #%s (%s)", pr_num, pr_summary.get("title"))
 
                     full_pr = await client_to_use.fetch_full_pr_details(
                         request.owner, request.repo, pr_summary
@@ -247,6 +246,11 @@ class GitHubCollectorService:
                         total_reviews += len(full_pr.reviews)
                         if pr_num > highest_pr_number:
                             highest_pr_number = pr_num
+
+                        # Check if limit reached
+                        if request.limit and prs_synced >= request.limit:
+                            logger.info("Reached requested limit of %d synced PRs.", request.limit)
+                            break
 
                     # Commit every batch of 10 PRs to save progress
                     if prs_synced % 10 == 0:
