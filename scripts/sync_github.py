@@ -2,7 +2,12 @@ import argparse
 import asyncio
 from datetime import datetime
 import logging
+from pathlib import Path
 import sys
+
+# Ensure workspace root is on sys.path when executed directly as a script
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 from app.core.database import async_session_factory, init_db
 from app.domain.github import GitHubSyncRequest
 from app.services.github.collector import GitHubCollectorService
