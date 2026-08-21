@@ -42,7 +42,12 @@ class OllamaLLMService:
             opts["num_thread"] = self.num_thread
         return opts
 
-    async def generate_response(self, prompt: str, system_prompt: Optional[str] = None) -> str:
+    async def generate_response(
+        self,
+        prompt: str,
+        system_prompt: Optional[str] = None,
+        format_json: bool = False,
+    ) -> str:
         """Send a prompt to Ollama's /api/generate endpoint and return the completed response."""
         url = f"{self.base_url}/api/generate"
         payload = {
@@ -55,6 +60,8 @@ class OllamaLLMService:
         }
         if system_prompt:
             payload["system"] = system_prompt
+        if format_json:
+            payload["format"] = "json"
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:

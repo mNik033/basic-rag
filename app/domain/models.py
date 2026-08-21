@@ -2,6 +2,7 @@ from datetime import datetime, timezone
 from typing import Any, List, Optional
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     DateTime,
     ForeignKey,
     Index,
@@ -89,6 +90,9 @@ class PullRequest(Base):
     )
     review_comments: Mapped[List["ReviewComment"]] = relationship(
         "ReviewComment", back_populates="pull_request", cascade="all, delete-orphan"
+    )
+    understanding: Mapped[Optional["PRUnderstanding"]] = relationship(
+        "PRUnderstanding", back_populates="pull_request", uselist=False, cascade="all, delete-orphan"
     )
 
     __table_args__ = (
@@ -194,3 +198,41 @@ class SyncState(Base):
     error_message: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
     repository: Mapped["Repository"] = relationship("Repository", back_populates="sync_state")
+
+
+class PRUnderstanding(Base):
+    __tablename__ = "github_pr_understanding"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    pull_request_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("github_pull_requests.id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
+    summary: Mapped[str] = mapped_column(Text, nullable=False)
+    motivation_type: Mapped[str] = mapped_column(String(50), nullable=False, default="unknown")
+    motivation_reason: Mapped[str] = mapped_column(Text, nullable=False)
+    motivation_quote: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    components: Mapped[list[str]] = mapped_column(JSONType, default=list, nullable=False)
+    change_types: Mapped[list[str]] = mapped_column(JSONType, default=list, nullable=False)
+    impact: Mapped[list[str]] = mapped_column(JSONType, default=list, nullable=False)
+    architectural_change: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    breaking_change: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
+    key_technical_details: Mapped[list[str]] = mapped_column(JSONType, default=list, nullable=False)
+    model_used: Mapped[str] = mapped_column(String(100), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=utc_now, onupdate=utc_now, nullable=False
+    )
+
+    pull_request: Mapped["PullRequest"] = relationship("PullRequest", back_populates="understanding")
+
+    __table_args__ = (
+        Index("idx_understanding_pr_id", "pull_request_id"),
+        Index("idx_understanding_motivation_type", "motivation_type"),
+    )
+
