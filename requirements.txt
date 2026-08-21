@@ -9,5 +9,8 @@ blake3
 pypdf
 python-docx
 httpx
+sqlalchemy[asyncio]
+asyncpg
+aiosqlite
 pytest
 pytest-asyncio
