@@ -1,5 +1,6 @@
 from datetime import datetime, timezone
 import pytest
+import pytest_asyncio
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
@@ -16,7 +17,7 @@ from app.domain.models import ChangedFile, Commit, PullRequest, Repository, Revi
 from app.services.github.collector import GitHubCollectorService
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def test_db_session():
     """In-memory SQLite async session for testing."""
     engine = create_async_engine("sqlite+aiosqlite:///:memory:", echo=False)
