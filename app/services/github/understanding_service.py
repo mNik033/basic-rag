@@ -63,10 +63,59 @@ HIGH_PRIORITY_EXTENSIONS = {
 }
 
 
+# Patterns for bot / service account authors
+BOT_AUTHOR_PATTERNS = [
+    r"\[bot\]$",
+    r"\[app\]$",
+    r"[-_]bot$",
+    r"^(codecov|coveralls|dependabot|renovate|github-actions|pre-commit-ci|vercel|netlify|sonarcloud|imgbot|fastapi-people)$",
+]
+
+# Patterns for automated / boilerplate review and comment content
+BOT_CONTENT_PATTERNS = [
+    r"(?i)coverage\s+(report|decreased|increased|diff|has\s+not\s+been\s+reported)",
+    r"(?i)coveralls\.io",
+    r"(?i)contributor\s+license\s+agreement",
+    r"(?i)cla\s+(signed|check|assistant)",
+    r"(?i)preview\s+(url|deployment|ready|available)",
+    r"(?i)bundle\s+size\s+report",
+    r"(?i)benchmark\s+results",
+    r"(?i)this\s+pull\s+request\s+has\s+been\s+automatically\s+marked\s+as\s+stale",
+]
+
+# Trivial single-phrase responses that add zero architectural insight
+TRIVIAL_COMMENT_PATTERNS = [
+    r"^(?i)(lgtm!?|\+1|👍|looks good to me!?|done|fixed|applied|nit:?|thanks!?|thx!?|thank you!?)$"
+]
+
+
 def is_noise_file(filename: str) -> bool:
     """Check if file is a lockfile, minified asset, binary, or build output."""
     norm = filename.replace("\\", "/")
     return any(re.search(pat, norm, re.IGNORECASE) for pat in IGNORED_DIFF_PATTERNS)
+
+
+def is_meaningful_review_comment(author: str, body: Optional[str]) -> bool:
+    """Filter out bot comments, CI reports, CLA notices, and trivial responses."""
+    if not body or not body.strip():
+        return False
+
+    clean_body = body.strip()
+
+    # 1. Author bot check
+    author_lower = (author or "").lower()
+    if any(re.search(pat, author_lower) for pat in BOT_AUTHOR_PATTERNS):
+        return False
+
+    # 2. Content boilerplate / CI report check
+    if any(re.search(pat, clean_body) for pat in BOT_CONTENT_PATTERNS):
+        return False
+
+    # 3. Trivial response check
+    if any(re.match(pat, clean_body) for pat in TRIVIAL_COMMENT_PATTERNS):
+        return False
+
+    return True
 
 
 def file_priority_key(file: ChangedFile) -> tuple[int, int]:
@@ -169,15 +218,21 @@ class PRUnderstandingService:
 
             parts.append("")
 
-        # Reviews & Discussion
-        if pr.reviews or pr.review_comments:
-            parts.append("## Review Comments & Discussion:")
+        # Reviews & Discussion (filtered for meaningful human feedback)
+        meaningful_discussions: List[str] = []
+        if pr.reviews:
             for r in pr.reviews:
-                if r.body and r.body.strip():
-                    parts.append(f"Review by @{r.author} ({r.state}): {r.body.strip()}")
+                if is_meaningful_review_comment(r.author, r.body):
+                    meaningful_discussions.append(f"Review by @{r.author} ({r.state}): {r.body.strip()}")
+        if pr.review_comments:
             for rc in pr.review_comments:
-                loc = f" on {rc.path}:{rc.line}" if rc.path else ""
-                parts.append(f"Comment by @{rc.author}{loc}: {rc.body.strip()}")
+                if is_meaningful_review_comment(rc.author, rc.body):
+                    loc = f" on {rc.path}:{rc.line}" if rc.path else ""
+                    meaningful_discussions.append(f"Comment by @{rc.author}{loc}: {rc.body.strip()}")
+
+        if meaningful_discussions:
+            parts.append("## Review Comments & Discussion:")
+            parts.extend(meaningful_discussions)
             parts.append("")
 
         parts.append("Please analyze the above Pull Request and provide the structured JSON engineering summary.")

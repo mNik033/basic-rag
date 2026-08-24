@@ -187,5 +187,96 @@ async def test_smart_diff_filtering(test_db_session: AsyncSession):
     assert "dist/bundle.min.js (modified" not in prompt
     assert "non-source / generated file(s) omitted from diff" in prompt
 
+
+@pytest.mark.asyncio
+async def test_review_comment_noise_filtering(test_db_session: AsyncSession):
+    repo = Repository(owner="test", name="comment-filter")
+    test_db_session.add(repo)
+    await test_db_session.flush()
+
+    pr = PullRequest(
+        repository_id=repo.id,
+        github_pr_id=888,
+        number=2,
+        title="Add authentication middleware",
+        state="closed",
+        author="alice",
+        created_at=datetime.now(timezone.utc),
+    )
+    test_db_session.add(pr)
+    await test_db_session.flush()
+
+    # 1. Bot review (codecov) -> Should be skipped
+    test_db_session.add(
+        Review(
+            pull_request_id=pr.id,
+            github_review_id=1,
+            author="codecov[bot]",
+            state="COMMENTED",
+            body="## Code Coverage Report\nCoverage decreased (-0.5%)",
+            submitted_at=datetime.now(timezone.utc),
+        )
+    )
+    # 2. CLA bot comment -> Should be skipped
+    test_db_session.add(
+        ReviewComment(
+            pull_request_id=pr.id,
+            github_comment_id=10,
+            author="cla-assistant[bot]",
+            body="CLA signed by all contributors.",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    # 3. Trivial human comment -> Should be skipped
+    test_db_session.add(
+        ReviewComment(
+            pull_request_id=pr.id,
+            github_comment_id=20,
+            author="charlie",
+            body="LGTM!",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    # 4. Meaningful human review -> Should be included
+    test_db_session.add(
+        Review(
+            pull_request_id=pr.id,
+            github_review_id=2,
+            author="senior_dev",
+            state="CHANGES_REQUESTED",
+            body="We should use constant-time comparison for the token to prevent timing attacks.",
+            submitted_at=datetime.now(timezone.utc),
+        )
+    )
+    # 5. Meaningful inline comment -> Should be included
+    test_db_session.add(
+        ReviewComment(
+            pull_request_id=pr.id,
+            github_comment_id=30,
+            author="alice",
+            path="app/middleware/auth.py",
+            line=42,
+            body="Updated to use hmac.compare_digest as requested.",
+            created_at=datetime.now(timezone.utc),
+        )
+    )
+    await test_db_session.commit()
+
+    service = PRUnderstandingService(test_db_session)
+    prompt = service.build_pr_context_prompt(pr)
+
+    # Bot comments omitted
+    assert "codecov[bot]" not in prompt
+    assert "Coverage Report" not in prompt
+    assert "cla-assistant" not in prompt
+    assert "LGTM" not in prompt
+
+    # Meaningful human discussions included
+    assert "Review by @senior_dev (CHANGES_REQUESTED)" in prompt
+    assert "constant-time comparison for the token" in prompt
+    assert "Comment by @alice on app/middleware/auth.py:42" in prompt
+    assert "Updated to use hmac.compare_digest" in prompt
+
+
     assert "performance" in saved_row.change_types
     assert saved_row.model_used == "gemma4:e2b"
