@@ -39,6 +39,11 @@ class VectorStoreManager:
         except Exception as e:
             raise VectorStoreError(f"Failed to initialize ChromaDB vector store: {str(e)}") from e
 
+    @property
+    def collection(self):
+        """Underlying ChromaDB collection."""
+        return self._collection
+
     def get_collection_version(self) -> int:
         """Get the current knowledge base collection version used for cache validity."""
         try:

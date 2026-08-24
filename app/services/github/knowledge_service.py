@@ -136,9 +136,16 @@ class KnowledgeBaseService:
         # 2. Check existing indexed documents to avoid re-embedding if not force_reindex
         docs_to_index: List[EngineeringDocument] = []
         if not request.force_reindex:
+            all_ids = [doc.doc_id for doc in documents]
+            try:
+                existing_res = self.vector_store.collection.get(ids=all_ids)
+                existing_ids = set(existing_res.get("ids", []))
+            except Exception as e:
+                logger.warning("Failed to batch query vector store for existing IDs: %s", e)
+                existing_ids = set()
+
             for doc in documents:
-                existing = self.vector_store.collection.get(ids=[doc.doc_id])
-                if not existing or len(existing.get("ids", [])) == 0:
+                if doc.doc_id not in existing_ids:
                     docs_to_index.append(doc)
                 else:
                     logger.debug("Document %s already indexed in vector store; skipping.", doc.doc_id)
