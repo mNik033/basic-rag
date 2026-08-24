@@ -58,7 +58,7 @@ class OllamaLLMService:
         self,
         prompt: str,
         system_prompt: Optional[str] = None,
-        format_json: bool = False,
+        format_json: Optional[dict] = None,
     ) -> str:
         """Send a prompt to Ollama's /api/generate endpoint and return the completed response."""
         url = f"{self.base_url}/api/generate"
@@ -72,8 +72,8 @@ class OllamaLLMService:
         }
         if system_prompt:
             payload["system"] = system_prompt
-        if format_json:
-            payload["format"] = "json"
+        if format_json is not None:
+            payload["format"] = format_json
 
         async with httpx.AsyncClient(timeout=self.timeout) as client:
             try:

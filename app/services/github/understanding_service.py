@@ -27,30 +27,19 @@ from app.services.llm import OllamaLLMService, get_llm_service
 logger = logging.getLogger(__name__)
 
 PR_UNDERSTANDING_SYSTEM_PROMPT = """You are an expert Staff Software Architect and Engineering Intelligence Analyst.
-Your role is to analyze historical GitHub Pull Requests (PR descriptions, commit messages, file diffs, reviews, and comments) to extract structured engineering knowledge.
+Analyze the provided Pull Request (description, commits, diffs, reviews) and generate a structured engineering summary.
 
-CRITICAL INSTRUCTIONS ON MOTIVATION & EVIDENCE:
-You must strictly classify the motivation for the change into one of three categories:
-1. "documented": The PR description, commit messages, or review comments explicitly state the reason/goal (e.g. "Fixes memory leak in ImageCache under high load", "Reduces battery drain"). When documented, you MUST provide an exact short `evidence_quote`.
-2. "inferred": The code diffs or commit messages strongly imply the reason, but it is NOT explicitly written down in documentation or comments.
-3. "unknown": There is insufficient evidence in the PR or diffs to know why the change was made.
+RULES:
+1. "summary": Exactly 1-2 concise sentences summarizing what changed. Do NOT use bullet points, lists, or newlines in the summary.
+2. "motivation": Classify into "documented" (explicitly stated in text/comments with a short exact "evidence_quote"), "inferred" (deduced from code), or "unknown".
+3. "components": List at most 3-4 affected module/subsystem/package names.
+4. "change_types": Select relevant tags from: ["feature", "bugfix", "performance", "memory", "refactor", "security", "api-change", "docs", "translation", "dependencies", "ci-cd"].
+5. "impact": 1-3 concise phrases describing the technical impact.
+6. "architectural_change": true only if introducing/modifying core system architecture or design patterns.
+7. "breaking_change": true if backward-incompatible.
+8. "key_technical_details": 1-3 brief technical highlights (e.g. algorithms, data structures, modified APIs).
 
-You must respond ONLY with a valid JSON object adhering strictly to this JSON schema:
-{
-  "summary": "Concise 1-2 sentence engineering summary of the change",
-  "motivation": {
-    "evidence_type": "documented" | "inferred" | "unknown",
-    "reason": "Why the change was made (the problem solved or requirement met)",
-    "evidence_quote": "Direct quote from PR description or review if documented, else null"
-  },
-  "components": ["List of impacted modules, classes, subsystems, or packages"],
-  "change_types": ["List of categories: e.g. memory, performance, bugfix, refactor, feature, security, api-change, build-infra"],
-  "impact": ["List of concrete technical and behavioral impacts"],
-  "architectural_change": true | false,
-  "breaking_change": true | false,
-  "key_technical_details": ["Key technical highlights: data structures, algorithms, configs, APIs modified"]
-}
-Do not include any conversational preamble or markdown code fencing outside the JSON. Return only the JSON object.
+Respond ONLY with the requested JSON structure. Never output conversational text or markdown formatting around the JSON.
 """
 
 
@@ -146,10 +135,50 @@ class PRUnderstandingService:
         prompt = self.build_pr_context_prompt(pr)
         logger.debug("Prompt sent to LLM for PR #%s:\n%s", pr.number, prompt)
 
+        schema = PRUnderstandingResult.model_json_schema()
         raw_response = await self.llm_service.generate_response(
             prompt=prompt,
             system_prompt=PR_UNDERSTANDING_SYSTEM_PROMPT,
-            format_json=True,
+            format_json=schema,
+        )
+        logger.debug("Raw LLM output for PR #%s:\n%s", pr.number, raw_response)
+
+        cleaned = clean_json_response(raw_response)
+
+        try:
+            parsed_dict = json.loads(cleaned)
+            result = PRUnderstandingResult.model_validate(parsed_dict)
+            result.raw_response = parsed_dict
+            return result
+        except (json.JSONDecodeError, Exception) as exc:
+            logger.warning(
+                "Failed strict validation on LLM output for PR #%s: %s.\n"
+                "=== RAW LLM RESPONSE ===\n%s\n========================",
+                pr.number,
+                exc,
+                raw_response,
+            )
+            # Fallback healing
+            return PRUnderstandingResult(
+                summary=f"PR #{pr.number}: {pr.title}",
+                motivation=MotivationDetail(
+                    evidence_type=EvidenceType.UNKNOWN,
+                    reason=pr.title,
+                ),
+                components=[],
+                change_types=["unknown"],
+                impact=[],
+                architectural_change=False,
+                breaking_change=False,
+                key_technical_details=[],
+                raw_response={"raw_text": raw_response, "parse_error": str(exc)},
+            )
+
+        schema = PRUnderstandingResult.model_json_schema()
+        raw_response = await self.llm_service.generate_response(
+            prompt=prompt,
+            system_prompt=PR_UNDERSTANDING_SYSTEM_PROMPT,
+            format_json=schema,
         )
         logger.debug("Raw LLM output for PR #%s:\n%s", pr.number, raw_response)
 
