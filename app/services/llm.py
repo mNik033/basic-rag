@@ -17,6 +17,10 @@ class OllamaLLMService:
         num_predict: Optional[int] = None,
         num_ctx: Optional[int] = None,
         temperature: Optional[float] = None,
+        repeat_penalty: Optional[float] = None,
+        repeat_last_n: Optional[int] = None,
+        top_k: Optional[int] = None,
+        top_p: Optional[float] = None,
         think: Optional[bool] = None,
         num_thread: Optional[int] = None,
     ) -> None:
@@ -28,6 +32,10 @@ class OllamaLLMService:
         self.num_predict = num_predict if num_predict is not None else settings.ollama_num_predict
         self.num_ctx = num_ctx if num_ctx is not None else settings.ollama_num_ctx
         self.temperature = temperature if temperature is not None else settings.ollama_temperature
+        self.repeat_penalty = repeat_penalty if repeat_penalty is not None else settings.ollama_repeat_penalty
+        self.repeat_last_n = repeat_last_n if repeat_last_n is not None else settings.ollama_repeat_last_n
+        self.top_k = top_k if top_k is not None else settings.ollama_top_k
+        self.top_p = top_p if top_p is not None else settings.ollama_top_p
         self.think = think if think is not None else settings.ollama_think
         self.num_thread = num_thread if num_thread is not None else settings.ollama_num_thread
 
@@ -37,6 +45,10 @@ class OllamaLLMService:
             "num_predict": self.num_predict,
             "num_ctx": self.num_ctx,
             "temperature": self.temperature,
+            "repeat_penalty": self.repeat_penalty,
+            "repeat_last_n": self.repeat_last_n,
+            "top_k": self.top_k,
+            "top_p": self.top_p,
         }
         if self.num_thread is not None:
             opts["num_thread"] = self.num_thread

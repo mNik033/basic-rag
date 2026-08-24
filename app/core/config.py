@@ -43,7 +43,11 @@ class Settings(BaseSettings):
     ollama_keep_alive: str = "15m"
     ollama_num_predict: int = 1536
     ollama_num_ctx: int = 4096
-    ollama_temperature: float = 0.2
+    ollama_temperature: float = 0.1
+    ollama_repeat_penalty: float = 1.2
+    ollama_repeat_last_n: int = 64
+    ollama_top_k: int = 40
+    ollama_top_p: float = 0.9
     ollama_think: bool = False
     ollama_num_thread: Optional[int] = None
 
