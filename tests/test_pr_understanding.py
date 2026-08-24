@@ -118,5 +118,74 @@ async def test_pr_understanding_extraction_and_save(test_db_session: AsyncSessio
 
     assert saved_row.motivation_type == "documented"
     assert saved_row.motivation_quote == "This reduces memory overhead during large list renders"
+
+
+@pytest.mark.asyncio
+async def test_smart_diff_filtering(test_db_session: AsyncSession):
+    repo = Repository(owner="test", name="diff-filter")
+    test_db_session.add(repo)
+    await test_db_session.flush()
+
+    pr = PullRequest(
+        repository_id=repo.id,
+        github_pr_id=999,
+        number=1,
+        title="Update deps and app core",
+        body="Upgraded dependencies and modified engine.",
+        state="closed",
+        author="alice",
+        created_at=datetime.now(timezone.utc),
+    )
+    test_db_session.add(pr)
+    await test_db_session.flush()
+
+    # Add lockfile (should be skipped), minified JS (skipped), and python file (included)
+    test_db_session.add(
+        ChangedFile(
+            pull_request_id=pr.id,
+            filename="package-lock.json",
+            status="modified",
+            additions=500,
+            deletions=200,
+            changes=700,
+            patch_text="@@ lockfile noise @@",
+        )
+    )
+    test_db_session.add(
+        ChangedFile(
+            pull_request_id=pr.id,
+            filename="dist/bundle.min.js",
+            status="modified",
+            additions=100,
+            deletions=100,
+            changes=200,
+            patch_text="@@ minified noise @@",
+        )
+    )
+    test_db_session.add(
+        ChangedFile(
+            pull_request_id=pr.id,
+            filename="app/core/engine.py",
+            status="modified",
+            additions=15,
+            deletions=3,
+            changes=18,
+            patch_text="@@ -1,3 +1,15 @@ def run_engine():",
+        )
+    )
+    await test_db_session.commit()
+
+    service = PRUnderstandingService(test_db_session)
+    prompt = service.build_pr_context_prompt(pr)
+
+    # Verify python source is in prompt diff
+    assert "app/core/engine.py" in prompt
+    assert "def run_engine():" in prompt
+
+    # Verify lockfile and minified diff patches are omitted
+    assert "package-lock.json (modified" not in prompt
+    assert "dist/bundle.min.js (modified" not in prompt
+    assert "non-source / generated file(s) omitted from diff" in prompt
+
     assert "performance" in saved_row.change_types
     assert saved_row.model_used == "gemma4:e2b"

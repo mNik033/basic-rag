@@ -43,6 +43,41 @@ Respond ONLY with the requested JSON structure. Never output conversational text
 """
 
 
+# Patterns for noise / non-source files that should not consume LLM diff context
+IGNORED_DIFF_PATTERNS = [
+    # Lockfiles
+    r"(^|/)(package-lock\.json|yarn\.lock|pnpm-lock\.yaml|poetry\.lock|Pipfile\.lock|Cargo\.lock|go\.sum|composer\.lock)$",
+    # Minified assets & source maps
+    r"\.(min\.js|min\.css|map|wasm)$",
+    # Generated docs / dist directories
+    r"(^|/)(dist|build|\.next|out|coverage|\.pytest_cache)/",
+    # Binary / image / font files
+    r"\.(png|jpe?g|gif|ico|svg|webp|avif|ttf|woff2?|eot|pdf|zip|tar|gz|bin)$",
+]
+
+# File extensions given priority when budgeting diff context
+HIGH_PRIORITY_EXTENSIONS = {
+    ".py", ".ts", ".tsx", ".js", ".jsx", ".go", ".rs", ".java",
+    ".cpp", ".c", ".h", ".hpp", ".cs", ".rb", ".php", ".swift",
+    ".kt", ".scala", ".proto", ".graphql", ".sql", ".yaml", ".yml", ".toml"
+}
+
+
+def is_noise_file(filename: str) -> bool:
+    """Check if file is a lockfile, minified asset, binary, or build output."""
+    norm = filename.replace("\\", "/")
+    return any(re.search(pat, norm, re.IGNORECASE) for pat in IGNORED_DIFF_PATTERNS)
+
+
+def file_priority_key(file: ChangedFile) -> tuple[int, int]:
+    """Sort files: high-priority code first (0), standard files next (1), sorted by change count."""
+    fn = file.filename.lower()
+    has_prio_ext = any(fn.endswith(ext) for ext in HIGH_PRIORITY_EXTENSIONS)
+    prio_rank = 0 if has_prio_ext else 1
+    # Secondary: files with more modifications first
+    return (prio_rank, -(file.changes or (file.additions + file.deletions)))
+
+
 def clean_json_response(raw_text: str) -> str:
     """Strip markdown code blocks or surrounding text to isolate JSON payload."""
     text = raw_text.strip()
@@ -95,17 +130,31 @@ class PRUnderstandingService:
                 parts.append(f"- [{c.sha[:7]}] {c.message.strip()} (+{c.additions}/-{c.deletions})")
             parts.append("")
 
-        # Changed Files & Diffs
+        # Changed Files & Diffs (smart filtered to prioritize high-signal code changes)
         if pr.changed_files:
             parts.append("## Changed Files & Patches:")
-            current_diff_len = 0
-            for f in pr.changed_files:
-                diff_header = f"### File: {f.filename} ({f.status}, +{f.additions}/-{f.deletions})"
-                patch = f.patch_text or "(Binary or diff too large)"
 
-                # Truncate large individual patches
-                if len(patch) > 2000:
-                    patch = patch[:2000] + "\n... [diff truncated for length] ..."
+            # Separate noise files (lockfiles, minified assets, binaries) from meaningful source files
+            source_files: List[ChangedFile] = []
+            skipped_noise: List[str] = []
+
+            for f in pr.changed_files:
+                if is_noise_file(f.filename):
+                    skipped_noise.append(f.filename)
+                else:
+                    source_files.append(f)
+
+            # Sort source files: core code extensions first, largest modifications first
+            source_files.sort(key=file_priority_key)
+
+            current_diff_len = 0
+            for f in source_files:
+                diff_header = f"### File: {f.filename} ({f.status}, +{f.additions}/-{f.deletions})"
+                patch = f.patch_text or "(Binary or diff unavailable)"
+
+                # Truncate large individual patches to preserve budget
+                if len(patch) > 1800:
+                    patch = patch[:1800] + "\n... [diff truncated for length] ..."
 
                 diff_block = f"{diff_header}\n```diff\n{patch}\n```\n"
 
@@ -114,6 +163,10 @@ class PRUnderstandingService:
                 else:
                     parts.append(diff_block)
                     current_diff_len += len(diff_block)
+
+            if skipped_noise:
+                parts.append(f"*Note: {len(skipped_noise)} non-source / generated file(s) omitted from diff (e.g. {', '.join(skipped_noise[:3])}).*")
+
             parts.append("")
 
         # Reviews & Discussion
