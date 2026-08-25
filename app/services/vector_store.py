@@ -100,14 +100,22 @@ class VectorStoreManager:
         except Exception as e:
             raise VectorStoreError(f"Failed to upsert chunks into vector store: {str(e)}") from e
 
-    def query(self, query_embedding: list[float], n_results: int = 3) -> dict:
-        """Query the vector store for nearest neighbor chunks using cosine similarity."""
+    def query(
+        self,
+        query_embedding: list[float],
+        n_results: int = 3,
+        where: Optional[dict[str, Any]] = None,
+    ) -> dict:
+        """Query the vector store for nearest neighbor chunks using cosine similarity with optional metadata filtering."""
         try:
-            results = self._collection.query(
-                query_embeddings=[query_embedding],
-                n_results=n_results,
-                include=["documents", "metadatas", "distances"],
-            )
+            kwargs: dict[str, Any] = {
+                "query_embeddings": [query_embedding],
+                "n_results": n_results,
+                "include": ["documents", "metadatas", "distances"],
+            }
+            if where:
+                kwargs["where"] = where
+            results = self._collection.query(**kwargs)
             return results
         except Exception as e:
             raise VectorStoreError(f"Vector store query failed: {str(e)}") from e
