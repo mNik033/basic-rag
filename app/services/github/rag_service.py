@@ -152,6 +152,75 @@ Be sure to explicitly cite the relevant PRs (e.g. PR #{candidates[0].pr_number})
             match_reasons=candidate.match_reasons,
         )
 
+    def select_candidates_for_prompt(
+        self,
+        candidates: List[RetrievalCandidate],
+        scenario: str,
+        hard_max: int = 5,
+        score_floor_ratio: float = 0.4,
+        dominant_threshold: float = 2.0,
+    ) -> List[RetrievalCandidate]:
+        """Select the minimal high-confidence candidate set for the LLM prompt.
+
+        This reduces prompt tokens by pruning low-confidence tail candidates
+        that add noise without improving answer quality.
+
+        Strategy:
+        1. If the top candidate's score is >= dominant_threshold * the second
+           candidate's score, only the top candidate is sent (strong single-hit).
+        2. Otherwise, include candidates whose combined_score is at least
+           score_floor_ratio * the top candidate's score.
+        3. Cap at hard_max regardless.
+
+        Args:
+            candidates: Ranked retrieval candidates (descending by combined_score).
+            scenario: Detected question scenario (used for scenario-specific caps).
+            hard_max: Absolute maximum candidates to send to the LLM prompt.
+            score_floor_ratio: Minimum score as a fraction of the top score to be included.
+            dominant_threshold: If top_score / second_score >= this, use only top candidate.
+        """
+        if not candidates:
+            return []
+
+        if len(candidates) == 1:
+            return candidates
+
+        top_score = candidates[0].combined_score
+
+        # Guard: if top score is 0 (shouldn't happen post-RRF normalization), return all
+        if top_score <= 0:
+            return candidates[:hard_max]
+
+        # Dominance check: top candidate is overwhelmingly ahead
+        second_score = candidates[1].combined_score
+        if second_score > 0 and (top_score / second_score) >= dominant_threshold:
+            logger.debug(
+                "Confidence gate: dominant top candidate (%.3f vs %.3f, ratio %.1fx). Sending 1 candidate to LLM.",
+                top_score,
+                second_score,
+                top_score / second_score,
+            )
+            return [candidates[0]]
+
+        # Score floor: include candidates scoring at least score_floor_ratio × top_score
+        score_floor = top_score * score_floor_ratio
+        selected = [c for c in candidates if c.combined_score >= score_floor]
+
+        # Enforce hard cap
+        selected = selected[:hard_max]
+
+        if len(selected) < len(candidates):
+            logger.debug(
+                "Confidence gate: pruned %d/%d candidates (floor=%.3f, top=%.3f). Sending %d to LLM.",
+                len(candidates) - len(selected),
+                len(candidates),
+                score_floor,
+                top_score,
+                len(selected),
+            )
+
+        return selected
+
     async def answer_engineering_query(
         self,
         request: EngineeringQueryRequest,
@@ -173,7 +242,7 @@ Be sure to explicitly cite the relevant PRs (e.g. PR #{candidates[0].pr_number})
         search_res = await self.hybrid_engine.search(search_req)
         candidates = search_res.results
 
-        # Convert candidates to evidence items
+        # Convert ALL candidates to evidence items (returned in API response)
         evidence_items = [self.candidate_to_evidence(c) for c in candidates]
 
         # 2. Check for empty evidence
@@ -188,10 +257,13 @@ Be sure to explicitly cite the relevant PRs (e.g. PR #{candidates[0].pr_number})
                 model_used=self.llm_service.model,
             )
 
-        # 3. Build prompt and invoke LLM
+        # 3. Confidence-gated candidate limiting for prompt context
+        prompt_candidates = self.select_candidates_for_prompt(candidates, scenario)
+
+        # 4. Build prompt and invoke LLM
         prompt = self.build_context_prompt(
             query=request.query,
-            candidates=candidates,
+            candidates=prompt_candidates,
             scenario=scenario,
         )
         system_prompt = request.system_prompt or ENGINEERING_SYSTEM_PROMPT
@@ -256,10 +328,13 @@ Be sure to explicitly cite the relevant PRs (e.g. PR #{candidates[0].pr_number})
             yield f"event: done\ndata: {json.dumps({'finish_reason': 'no_evidence'})}\n\n"
             return
 
-        # 3. Build prompt and stream tokens
+        # 3. Confidence-gated candidate limiting for prompt context
+        prompt_candidates = self.select_candidates_for_prompt(candidates, scenario)
+
+        # 4. Build prompt and stream tokens
         prompt = self.build_context_prompt(
             query=request.query,
-            candidates=candidates,
+            candidates=prompt_candidates,
             scenario=scenario,
         )
         system_prompt = request.system_prompt or ENGINEERING_SYSTEM_PROMPT
@@ -275,3 +350,4 @@ Be sure to explicitly cite the relevant PRs (e.g. PR #{candidates[0].pr_number})
             yield f"event: error\ndata: {json.dumps({'error': str(e)})}\n\n"
 
         yield f"event: done\ndata: {json.dumps({'finish_reason': 'stop'})}\n\n"
+
