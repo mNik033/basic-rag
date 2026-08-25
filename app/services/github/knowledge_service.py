@@ -1,6 +1,6 @@
 import logging
 from typing import List, Optional
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
@@ -47,7 +47,8 @@ class KnowledgeBaseService:
         res = await self.session.execute(stmt)
         record = res.scalar_one_or_none()
         if not record:
-            raise ValueError("Repository not found.")
+            ident = f"id={repository_id}" if repository_id else f"{owner}/{repo}"
+            raise ValueError(f"Repository '{ident}' not found.")
         return record
 
     async def get_knowledge_status(self, owner: str, repo: str) -> KnowledgeStatusResponse:
@@ -55,16 +56,16 @@ class KnowledgeBaseService:
         repo_obj = await self.get_repository(owner=owner, repo=repo)
 
         # Count total PRs
-        pr_stmt = select(PullRequest).where(PullRequest.repository_id == repo_obj.id)
-        total_prs = len((await self.session.execute(pr_stmt)).scalars().all())
+        pr_stmt = select(func.count(PullRequest.id)).where(PullRequest.repository_id == repo_obj.id)
+        total_prs = (await self.session.execute(pr_stmt)).scalar() or 0
 
         # Count understood PRs
         u_stmt = (
-            select(PRUnderstanding)
+            select(func.count(PRUnderstanding.id))
             .join(PullRequest, PRUnderstanding.pull_request_id == PullRequest.id)
             .where(PullRequest.repository_id == repo_obj.id)
         )
-        understood_prs = len((await self.session.execute(u_stmt)).scalars().all())
+        understood_prs = (await self.session.execute(u_stmt)).scalar() or 0
 
         # Count indexed vectors from vector store
         repo_full_name = f"{owner}/{repo}"

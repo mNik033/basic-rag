@@ -9,12 +9,18 @@ from app.domain.github import (
     GitHubSyncResponse,
     GitHubSyncStatusResponse,
 )
+from app.domain.knowledge import (
+    KnowledgeIndexRequest,
+    KnowledgeIndexResponse,
+    KnowledgeStatusResponse,
+)
 from app.domain.models import ChangedFile, Commit, PRUnderstanding, PullRequest, Repository, SyncState
 from app.domain.understanding import (
     PRUnderstandingProcessRequest,
     PRUnderstandingProcessResponse,
 )
 from app.services.github.collector import GitHubCollectorService
+from app.services.github.knowledge_service import KnowledgeBaseService
 from app.services.github.understanding_service import PRUnderstandingService
 
 router = APIRouter(prefix="/github", tags=["GitHub Engineering Data"])
@@ -296,4 +302,48 @@ async def list_pr_understandings(
         )
 
     return results
+
+
+@router.post(
+    "/knowledge/index",
+    response_model=KnowledgeIndexResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def index_repository_knowledge(
+    request: KnowledgeIndexRequest,
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeIndexResponse:
+    """Trigger vector indexing and dense embedding generation for a repository's pull requests."""
+    service = KnowledgeBaseService(db)
+    try:
+        return await service.index_repository_knowledge(request)
+    except ValueError as e:
+        status_code = (
+            status.HTTP_404_NOT_FOUND
+            if "not found" in str(e).lower()
+            else status.HTTP_400_BAD_REQUEST
+        )
+        raise HTTPException(status_code=status_code, detail=str(e))
+
+
+@router.get(
+    "/knowledge/status/{owner}/{repo}",
+    response_model=KnowledgeStatusResponse,
+    status_code=status.HTTP_200_OK,
+)
+async def get_knowledge_status(
+    owner: str,
+    repo: str,
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeStatusResponse:
+    """Get count of total PRs, understood PRs, and indexed vector embeddings for a repository."""
+    service = KnowledgeBaseService(db)
+    try:
+        return await service.get_knowledge_status(owner=owner, repo=repo)
+    except ValueError as e:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=str(e),
+        )
+
 
