@@ -60,3 +60,44 @@ class HybridSearchResponse(BaseModel):
     results: List[RetrievalCandidate]
     vector_hits: int = 0
     keyword_hits: int = 0
+
+
+class EngineeringEvidence(BaseModel):
+    """Specific PR evidence citation backing an answer."""
+    pr_number: int
+    repository: str
+    title: str
+    author: str
+    merged_at: Optional[datetime] = None
+    milestone: Optional[str] = None
+    components: List[str] = Field(default_factory=list)
+    change_types: List[str] = Field(default_factory=list)
+    motivation_type: Optional[str] = Field(None, description="'documented', 'inferred', or 'unknown'")
+    motivation_reason: Optional[str] = None
+    key_technical_details: List[str] = Field(default_factory=list)
+    changed_files: List[str] = Field(default_factory=list)
+    relevance_score: float = Field(0.0, description="Rank fusion relevance score")
+    rank: int = 0
+    match_reasons: List[str] = Field(default_factory=list)
+
+
+class EngineeringQueryRequest(BaseModel):
+    """Input payload for asking natural language questions about engineering evolution."""
+    query: str = Field(..., min_length=2, description="Natural language engineering question")
+    repository: Optional[str] = Field(None, description="Scope query to a specific repo (e.g. 'facebook/react')")
+    filter: Optional[RetrievalFilter] = Field(default_factory=RetrievalFilter, description="Optional metadata constraints")
+    limit: int = Field(5, ge=1, le=20, description="Number of top PR candidates to retrieve as context")
+    system_prompt: Optional[str] = Field(None, description="Custom system prompt override")
+    include_raw_evidence: bool = Field(True, description="Whether to include full structured evidence list in response")
+
+
+class EngineeringAnswerResponse(BaseModel):
+    """Evidence-backed engineering intelligence answer."""
+    query: str
+    answer: str
+    scenario_detected: str = Field("general_qa", description="Detected question category (e.g. release_comparison, issue_search, impact_search, decision_understanding)")
+    evidence: List[EngineeringEvidence] = Field(default_factory=list)
+    total_evidence_count: int = 0
+    has_sufficient_evidence: bool = True
+    model_used: str
+

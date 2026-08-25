@@ -1,5 +1,6 @@
 from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -15,13 +16,21 @@ from app.domain.knowledge import (
     KnowledgeStatusResponse,
 )
 from app.domain.models import ChangedFile, Commit, PRUnderstanding, PullRequest, Repository, SyncState
+from app.domain.retrieval import (
+    EngineeringAnswerResponse,
+    EngineeringQueryRequest,
+    HybridSearchRequest,
+    HybridSearchResponse,
+)
 from app.domain.understanding import (
     PRUnderstandingProcessRequest,
     PRUnderstandingProcessResponse,
 )
 from app.services.github.collector import GitHubCollectorService
 from app.services.github.knowledge_service import KnowledgeBaseService
+from app.services.github.rag_service import EngineeringRAGService
 from app.services.github.understanding_service import PRUnderstandingService
+from app.services.retrieval.hybrid_search import HybridSearchEngine
 
 router = APIRouter(prefix="/github", tags=["GitHub Engineering Data"])
 
@@ -345,5 +354,57 @@ async def get_knowledge_status(
             status_code=status.HTTP_404_NOT_FOUND,
             detail=str(e),
         )
+
+
+@router.post(
+    "/search/hybrid",
+    response_model=HybridSearchResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Execute hybrid search (semantic + lexical + RRF) over repository pull requests",
+)
+async def hybrid_search_pr_knowledge(
+    request: HybridSearchRequest,
+    db: AsyncSession = Depends(get_db),
+) -> HybridSearchResponse:
+    """Combines vector similarity and keyword search using Reciprocal Rank Fusion."""
+    engine = HybridSearchEngine(db)
+    return await engine.search(request)
+
+
+@router.post(
+    "/query",
+    response_model=EngineeringAnswerResponse,
+    status_code=status.HTTP_200_OK,
+    summary="Ask an evidence-grounded question about engineering history",
+)
+async def answer_engineering_question(
+    request: EngineeringQueryRequest,
+    db: AsyncSession = Depends(get_db),
+) -> EngineeringAnswerResponse:
+    """Answer natural language engineering questions backed by retrieved PR evidence and AI understandings."""
+    service = EngineeringRAGService(db)
+    return await service.answer_engineering_query(request)
+
+
+@router.post(
+    "/query/stream",
+    summary="Stream an evidence-grounded answer to an engineering question with SSE",
+)
+async def stream_engineering_question(
+    request: EngineeringQueryRequest,
+    db: AsyncSession = Depends(get_db),
+) -> StreamingResponse:
+    """Stream real-time tokens and evidence metadata for engineering intelligence queries."""
+    service = EngineeringRAGService(db)
+    return StreamingResponse(
+        service.stream_engineering_query(request),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
 
 
