@@ -1,0 +1,78 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    background-color: #f8fafc;
+    color: #0f172a;
+    font-family: "Plus Jakarta Sans", Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+
+  .dark body {
+    background-color: #090d16;
+    color: #e2e8f0;
+  }
+
+  code, pre, .font-mono {
+    font-family: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  }
+}
+
+/* Custom minimal scrollbar for dense developer panels */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: #1e293b;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: #334155;
+}
+
+/* Loading border gradient spin animation for chat input */
+@property --bg-angle {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@keyframes search-spin {
+  0% { --bg-angle: 0deg; }
+  100% { --bg-angle: 360deg; }
+}
+
+.search-field-wrap {
+  position: relative;
+  transition: background-color 0.2s ease;
+}
+
+.search-field-wrap.is-loading {
+  background: conic-gradient(from var(--bg-angle), #e2e8f0 0%, #e2e8f0 70%, #0284c7 100%) !important;
+  animation: search-spin 3.5s linear infinite;
+}
+
+.dark .search-field-wrap.is-loading {
+  background: conic-gradient(from var(--bg-angle), #1e293b 0%, #1e293b 70%, #38bdf8 100%) !important;
+}
+
+
+
+
+
